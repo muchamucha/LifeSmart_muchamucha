@@ -1,0 +1,13 @@
+{
+  "domain": "lifesmart_muchamucha",
+  "name": "lifesmart_muchamucha",
+  "documentation": "https://github.com/muchamucha/lifesmart_muchamucha",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": [
+    "@muchamucha"
+  ],
+  "version": "25.0.1",
+  "config_flow": true,
+  "translations": ["en", "zh"]
+}

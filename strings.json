@@ -1,0 +1,16 @@
+{
+    "config": {
+      "step": {
+        "user": {
+          "description": "Set up your Lifesmart account!",
+          "data":{
+              "appkey": "App Key",
+              "apptoken": "App Token",
+              "username": "Username",
+              "password": "Password",
+              "exclude": "exclude"
+          }
+        }
+      }
+    }
+  }

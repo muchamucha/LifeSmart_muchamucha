@@ -1,0 +1,16 @@
+{
+    "config": {
+      "step": {
+        "user": {
+          "description": "配置您的Lifesmart账号。",
+          "data":{
+              "appkey": "应用密钥",
+              "apptoken": "应用令牌",
+              "username": "用户名",
+              "password": "密码",
+              "exclude": "排除设备"
+          }
+        }
+      }
+    }
+  }

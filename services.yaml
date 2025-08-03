@@ -1,0 +1,21 @@
+send_keys:
+  description: send keys.
+  fields:
+    me:
+      description: test.
+      example: '0010'
+    agt:
+      description: test2.
+      example: '_xXXXXXXXXXXXXXXXXX'
+    ai:
+      description: test3
+      example: 'AI_IR_xxxx_xxxxxxxx'
+    category:
+      description: test4
+      example: 'custom'
+    brand:
+      description: test5
+      example: 'custom'
+    keys:
+      description: test6
+      example: '["key"]'
