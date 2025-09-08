@@ -5,7 +5,7 @@ from homeassistant.components.binary_sensor import (
     ENTITY_ID_FORMAT,
 )
 
-from . import LifeSmartEntity
+from .entity import LifeSmartEntity
 DOMAIN = "lifesmart_1"
 _LOGGER = logging.getLogger(__name__)
 

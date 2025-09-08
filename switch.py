@@ -5,7 +5,6 @@ import json
 import time
 import hashlib
 import logging
-import pdb
 
 from homeassistant.components.switch import (
     SwitchEntity,

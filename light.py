@@ -16,7 +16,7 @@ from homeassistant.components.light import (
 )
 import homeassistant.util.color as color_util
 
-from . import  LifeSmartEntity
+from .entity import LifeSmartEntity
 
 DOMAIN = "lifesmart_1"
 _LOGGER = logging.getLogger(__name__)

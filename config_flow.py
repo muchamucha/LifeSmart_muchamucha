@@ -7,7 +7,6 @@ import aiohttp
 import time
 import hashlib
 import json
-import pdb
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -108,7 +107,6 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain="lifesmart_1"):
         )
 
     async def lifesmart_Login(self,uid,pwd,appkey):
-        import pdb
         url = "https://api.ilifesmart.com/app/auth.login"
         login_data = {
         "uid": uid,

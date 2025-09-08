@@ -10,16 +10,19 @@ import threading
 import websocket
 import asyncio
 import aiohttp
+from datetime import timedelta
+
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from .config_flow import LifeSmartConfigFlow
 import logging
-import pdb
 from .supbowl import LifeSmartSupBowlAPI
 
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import discovery
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -458,23 +461,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     
     exclude_items = entry.data.get('exclude', [])
 
-    PLATFORMS = ["switch", "binary_sensor", "cover", "light", "climate", "sensor"]
+    PLATFORMS = ["switch", "binary_sensor", "cover", "light", "climate", "sensor","button"]
 
     # 存储 devices 到 hass.data
     hass.data[DOMAIN][entry.entry_id] = {
         "devices": devices,
         "config": param
     }
-
-    # 一次性加载每个平台（不再按设备类型判断）
-    for platform in PLATFORMS:
-        hass.async_create_task(
-            hass.config_entries.async_forward_entry_setup(entry, platform)
-        )
     #添加超级碗
     devices = hass.data[DOMAIN][entry.entry_id].get("devices",None)
     for device in devices:
-        # pdb.set_trace()
         if device.get('devtype',None) in SUPBOWL_TYPES:
             supbowl_api = LifeSmartSupBowlAPI(
                 appkey=entry.data["appkey"],
@@ -485,21 +481,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 me=device.get('me',None),
             )
             remotes = await hass.async_add_executor_job(supbowl_api.get_remote_list)
-            
+            # 存储 remotes 到 hass.data
+            hass.data[DOMAIN][entry.entry_id]["remotes"] = remotes
             remote_buttons = {}
             for ai, info in remotes.items():
-                detail = await hass.async_add_executor_job(supbowl_api.get_remote_detail, ai)
-                # detail.keys 例：["POWER", "MUTE", ...]  detail.codes: 每个键的红外码
-                remote_buttons[ai] = detail.get("keys", [])
-            # pdb.set_trace()
+                # 将空调当前设置存储到climate
+                if info.get('category') == "ac":
+                    climate_state = await hass.async_add_executor_job(supbowl_api.get_ac_remote_state,ai)
+                    # 存储 climate_state 到 hass.data
+                    hass.data[DOMAIN][entry.entry_id]["remotes"][ai]["remote_ac_state"] = climate_state
+                else:
+                    detail = await hass.async_add_executor_job(supbowl_api.get_remote_detail, ai)
+                    # detail.keys 例：["POWER", "MUTE", ...]  detail.codes: 每个键的红外码
+                    remote_buttons[ai] = detail.get("keys", [])
+                    hass.data[DOMAIN][entry.entry_id]["remotes"][ai]["remote_buttons"] = remote_buttons[ai]
+                
     # 缓存
     hass.data[DOMAIN][entry.entry_id]["supbowl_api"] = supbowl_api
-    hass.data[DOMAIN][entry.entry_id]["remotes"] = remotes
-    hass.data[DOMAIN][entry.entry_id]["remote_buttons"] = remote_buttons
+    async def _async_update():
+        try:
+            result = {}
+            for ai, info in remotes.items():
+                if info.get('category') == "ac":
+                    state = await hass.async_add_executor_job(supbowl_api.get_ac_remote_state,ai)
+                    result[ai] = state
+            return result
+        except Exception as e:
+            _LOGGER.error(f"Error during update: {e}")
+            raise UpdateFailed(f"Error during update: {e}")
+    coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name="lifesmart_supbowl_ac_remote",
+        update_method=_async_update,
+        update_interval=timedelta(seconds=20),
+    )
+    await coordinator.async_config_entry_first_refresh()
+    hass.data[DOMAIN][entry.entry_id]["coordinator"] = coordinator
+    
 
-    # 转发到button.py
-    await hass.config_entries.async_forward_entry_setup(entry, "button")
-
+    # 一次性加载每个平台（不再按设备类型判断）
+    for platform in PLATFORMS:
+        hass.async_create_task(
+            hass.config_entries.async_forward_entry_setup(entry, platform)
+        )
     
 
     def send_keys(call):
@@ -707,7 +732,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 # hass.states.set(enid, msg['msg']['v'], attrs)
                 safe_update_state(hass, enid, msg['msg']['v'], attrs, logger=_LOGGER)
     def on_message(ws, message):
-        _LOGGER.warning("websocket_msg: %s",str(message))
         msg = json.loads(message)
         if 'type' not in msg:
             return

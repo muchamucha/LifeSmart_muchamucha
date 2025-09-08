@@ -1,6 +1,7 @@
 """Support for the LifeSmart climate devices."""
 import logging
 import time
+from homeassistant.core import callback
 from homeassistant.components.climate import ENTITY_ID_FORMAT, ClimateEntity
 from homeassistant.components.climate.const import (
     HVAC_MODE_AUTO,
@@ -11,6 +12,7 @@ from homeassistant.components.climate.const import (
     SUPPORT_FAN_MODE,
     SUPPORT_TARGET_TEMPERATURE,
     HVAC_MODE_OFF,
+    SUPPORT_SWING_MODE
 )
 
 from homeassistant.const import (
@@ -20,7 +22,8 @@ from homeassistant.const import (
     TEMP_FAHRENHEIT,
 )
 
-from . import LifeSmartEntity
+from .entity import LifeSmartEntity
+from .supbowl import LifeSmartSupBowlAPI
 DOMAIN = "lifesmart_1"
 _LOGGER = logging.getLogger(__name__)
 DEVICE_TYPE = "climate"
@@ -47,8 +50,12 @@ AIR_TYPES=["V_AIR_P"]
 
 THER_TYPES = ["SL_CP_DN"]
 
-
-LIFESMART_STATE_LIST
+LS_MODE_TO_HA = {0: HVAC_MODE_AUTO, 1: HVAC_MODE_COOL, 2: HVAC_MODE_DRY, 3: HVAC_MODE_FAN_ONLY, 4: HVAC_MODE_HEAT}
+HA_MODE_TO_LS = {v: k for k, v in LS_MODE_TO_HA.items()}
+HA_FAN_TO_WIND = {"auto": 0, "low": 1, "medium": 2, "high": 3}
+WIND_TO_HA_FAN = {v: k for k, v in HA_FAN_TO_WIND.items()}
+HA_SWING_TO_LS = {"auto": 0, "1": 1, "2": 2, "3": 3, "4": 4}
+SWING_TO_HA = {v: k for k, v in HA_SWING_TO_LS.items()}
 
 # def setup_platform(hass, config, add_entities, discovery_info=None):
 #     """Set up LifeSmart Climate devices."""
@@ -71,6 +78,9 @@ async def async_setup_entry(hass, config, async_add_entities):
     data = hass.data[DOMAIN][config.entry_id]
     dev_data = data.get('devices',None)
     param = data.get('config',None)
+    remotes = data.get("remotes",None)
+    api = data.get("supbowl_api",None)
+    coord = data.get("coordinator",None)
     # 检查设备的 data 字段是否存在
     if not data:
         _LOGGER.error("Device data not found in dev: %s", data)
@@ -81,6 +91,22 @@ async def async_setup_entry(hass, config, async_add_entities):
                 continue
             for idx in device['data']:
                 devices.append(LifeSmartClimateEntity(device,idx,device['data'][idx],device['agt_ver'],param))
+    for ai, info in remotes.items():
+        if info.get("category") != "ac":
+            continue
+        remote_name = info.get("name") or f"AC-{ai}"
+        brand = info.get("brand") or "unknown"
+        state = await hass.async_add_executor_job(api.get_ac_remote_state, ai)
+        devices.append(
+            LifeSmartAcRemoteEntity(
+                ai = ai,
+                name = remote_name,
+                brand = brand,
+                api = api,
+                init_state = state or {},
+                coord = coord
+            )
+        )
     async_add_entities(devices)
     _LOGGER.debug("Total devices to add: %d", len(devices))
     _LOGGER.debug("Raw dev_data: %s", dev_data)
@@ -93,10 +119,15 @@ class LifeSmartClimateEntity(LifeSmartEntity, ClimateEntity):
     def __init__(self, dev, idx, val, ver, param):
         """Init LifeSmart cover device."""
         super().__init__(dev, idx, val, ver, param)
-        self._name = dev['name']
-        self._ver = ver
-        cdata = dev['data']
-        #_LOGGER.info("climate.py_cdata: %s",str(cdata))
+        # self._name = dev['name']
+        # self._ver = ver
+        # self._supbowl = hass.data.get(DOMAIN,{}).get("supbowl")
+        # self._ai = dev.get("ai")
+        # self._brand = dev.get("brand")
+        # self._idx = dev.get("idx")
+        # self._use_ir = bool(self._supbowl and self._ai and self._brand)
+
+        cdata = dev['data']        #_LOGGER.info("climate.py_cdata: %s",str(cdata))
         self.entity_id = ENTITY_ID_FORMAT.format(( dev['devtype'] + "_" + dev['agt'] + "_" + dev['me']).lower().replace(":","_").replace("@","_"))
         if dev['devtype'] in AIR_TYPES:
             self._modes = LIFESMART_STATE_LIST
@@ -248,3 +279,119 @@ class LifeSmartClimateEntity(LifeSmartEntity, ClimateEntity):
     def max_temp(self):
         """Return the maximum temperature."""
         return self._max_temp
+
+class LifeSmartAcRemoteEntity(ClimateEntity):
+    _attr_temperature_unit = TEMP_CELSIUS
+    _attr_target_temperature_step = 1
+    def __init__(self, ai, name, brand, api, init_state: dict, coord):
+        self._attr_name = name
+        self._attr_unique_id = f"{ai}-climate"
+        self._ai = ai
+        self._brand = brand
+        self._api = api
+        self.coord = coord
+        # IR 全码缓存（先用回读值初始化，缺省兜底）
+        st = coord.data.get(ai, {}) or {}
+        self._power = int(st.get("power", 1))
+        self._mode  = int(st.get("mode",  1))
+        self._temp  = int(st.get("temp",  26))
+        self._wind  = int(st.get("wind",  0))
+        self._swing = int(st.get("swing", 0))
+        
+
+        # 支持能力：温度必开；风速/摆风先给默认，后续你可在 async_added_to_hass 里探测再调
+        self._attr_supported_features = SUPPORT_TARGET_TEMPERATURE | SUPPORT_FAN_MODE | SUPPORT_SWING_MODE
+        self._attr_hvac_modes = [HVAC_MODE_OFF, HVAC_MODE_AUTO, HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_DRY, HVAC_MODE_FAN_ONLY]
+        self._attr_fan_modes = list(HA_FAN_TO_WIND.keys())
+        self._attr_swing_modes = list(HA_SWING_TO_LS.keys())
+    # 只读属性映射
+    @property
+    def hvac_mode(self):
+        if self._power == 0:
+            return HVAC_MODE_OFF
+        return LS_MODE_TO_HA.get(self._mode, HVAC_MODE_AUTO)
+
+    @property
+    def target_temperature(self):
+        return self._temp
+
+    @property
+    def fan_mode(self):
+        return WIND_TO_HA_FAN.get(self._wind, "auto")
+
+    @property
+    def swing_mode(self):
+        return SWING_TO_HA.get(self._swing, "auto")
+    
+    async def async_added_to_hass(self):
+        self.async_on_remove(self.coord.async_add_listener(self._handle_coordinator_update))
+    
+    @callback
+    def _handle_coordinator_update(self):
+        st = self.coord.data.get(self._ai) or {}
+        if st:
+            self._power = int(st.get("power", self._power))
+            self._mode  = int(st.get("mode",  self._mode))
+            self._temp  = int(st.get("temp",  self._temp))
+            self._wind  = int(st.get("wind",  self._wind))
+            self._swing = int(st.get("swing", self._swing))
+            self.async_write_ha_state()
+            
+    async def _apply(self, key_hint: str):
+        if not self._api:
+            # 兼容旧逻辑：沿用你现有的 _lifesmart_epset
+            # 假设你已有方法：await self._lifesmart_epset({...})
+            await self._lifesmart_epset({
+                "key": key_hint,
+                "power": self._power, "mode": self._mode,
+                "temp": self._temp, "wind": self._wind, "swing": self._swing,
+            })
+            return
+
+        # IR 路径（requests → 线程池执行）
+        ok = await self.hass.async_add_executor_job(
+            self._api.send_ac_keys,
+            self._ai, "ac", self._brand, key_hint,
+            int(self._power), int(self._mode), int(self._temp), int(self._wind), int(self._swing),
+        )
+        if not ok:
+            # 回滚并强制同步，避免 UI 与实物不一致
+            await self.coord.async_request_refresh()
+            # 这里可按你项目风格 raise/日志
+    
+    async def async_set_hvac_mode(self, hvac_mode):
+        if hvac_mode == HVAC_MODE_OFF:
+            self._power = 0
+            return await self._apply("power")
+        self._power = 1
+        self._mode = HA_MODE_TO_LS.get(hvac_mode, 0)
+        await self._apply("mode")
+
+    async def async_set_temperature(self, **kwargs):
+        t = kwargs.get("temperature")
+        if t is None:
+            return
+        self._temp = int(t)
+        await self._apply("temp")
+
+    async def async_set_fan_mode(self, fan_mode):
+        self._wind = HA_FAN_TO_WIND.get(fan_mode, 0)
+        await self._apply("wind")
+
+    async def async_set_swing_mode(self, swing_mode):
+        self._swing = HA_SWING_TO_LS.get(swing_mode, 0)
+        await self._apply("swing")
+
+    async def async_update(self):
+        if not self._api:
+            # 你的原有获取状态逻辑
+            return
+        state = await self.hass.async_add_executor_job(self._api.get_ac_remote_state, self._ai)
+        if not state:
+            return
+        self._power = int(state.get("power", self._power))
+        self._mode  = int(state.get("mode",  self._mode))
+        self._temp  = int(state.get("temp",  self._temp))
+        self._wind  = int(state.get("wind",  self._wind))
+        self._swing = int(state.get("swing", self._swing))
+    

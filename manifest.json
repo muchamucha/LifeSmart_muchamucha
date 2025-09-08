@@ -1,13 +1,13 @@
 {
-  "domain": "lifesmart_muchamucha",
-  "name": "lifesmart_muchamucha",
-  "documentation": "https://github.com/muchamucha/lifesmart_muchamucha",
+  "domain": "lifesmart_1",
+  "name": "lifesmart_1",
+  "documentation": "https://github.com/skyzhishui/custom_components",
   "requirements": [],
   "dependencies": [],
   "codeowners": [
-    "@muchamucha"
+    "@skyzhishui"
   ],
-  "version": "25.0.1",
+  "version": "23.10.26",
   "config_flow": true,
   "translations": ["en", "zh"]
 }

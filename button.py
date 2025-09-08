@@ -1,6 +1,5 @@
 from homeassistant.components.button import ButtonEntity
 from .supbowl import LifeSmartSupBowlAPI
-import pdb
 DOMAIN = "lifesmart_1"
 
 
@@ -15,7 +14,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
         category = info["category"]
         brand = info["brand"]
         detail = await hass.async_add_executor_job(api.get_remote_detail, ai)
-        pdb.set_trace() 
         for btn in detail.get("keys", []):
             entities.append(SupBowlIRButton(
                 ai, remote_name, category, brand, btn, api

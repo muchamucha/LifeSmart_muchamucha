@@ -6,7 +6,7 @@ from homeassistant.components.cover import (
 )
 import logging
 
-from . import LifeSmartEntity
+from .entity import LifeSmartEntity
 DOMAIN = "lifesmart_1"
 _LOGGER = logging.getLogger(__name__)
 

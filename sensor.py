@@ -8,7 +8,7 @@ from homeassistant.const import (
 DOMAIN = "lifesmart_1"
 ENTITY_ID_FORMAT = DOMAIN + ".{}"
 
-from . import  LifeSmartEntity
+from .entity import LifeSmartEntity
 
 _LOGGER = logging.getLogger(__name__)
 
